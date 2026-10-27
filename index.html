@@ -451,7 +451,22 @@ body.present .peek { display: block; }
 .panel .primary { background: var(--tag-bg); color: var(--tag-fg); font-weight: 700; }
 .panel .primary:hover { background: var(--tag-bg); opacity: .88; }
 .lesson-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.lesson-list li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--ui-line); border-radius: 10px; }
+.lesson-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 8px 10px; border: 1px solid var(--ui-line); border-radius: 10px; }
+.lesson-list .acts { display: flex; gap: 2px; }
+.lesson-list .edit-row { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; }
+.lesson-list .edit-row input { flex: 1 1 140px; }
+.folder-group { margin: 0 0 14px; }
+.folder-group > summary { cursor: pointer; font-weight: 700; font-size: 14px; padding: 6px 2px; list-style: none; display: flex; align-items: center; gap: 6px; }
+.folder-group > summary::-webkit-details-marker { display: none; }
+.folder-group > summary::before { content: "▸"; color: var(--ink-soft); }
+.folder-group[open] > summary::before { content: "▾"; }
+.folder-group .count { font-weight: 400; color: var(--ink-soft); font-size: 12px; }
+.panel .field-label { font-size: 12px; color: var(--ink-soft); margin: 0 0 4px; }
+.panel .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.panel .two label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); min-width: 0; }
+.export-box { margin-top: 18px; padding: 12px; border-radius: 10px; background: var(--ui-hover); font-size: 13px; line-height: 1.55; }
+.export-box p { margin: 0 0 8px; }
+@media (max-width: 480px) { .panel .two { grid-template-columns: 1fr; } }
 .lesson-list .meta { flex: 1; min-width: 0; }
 .lesson-list .name { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lesson-list .when { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
@@ -697,7 +712,17 @@ body.present .peek { display: block; }
   var $ = function (id) { return document.getElementById(id); };
   var fieldEls = function () { return Array.prototype.slice.call(document.querySelectorAll("[data-key]")); };
 
-  function save() { store(STORE_KEY, state); }
+  var BASE_TITLE = document.title;
+  var linkActive = false;
+  function save() {
+    store(STORE_KEY, state);
+    // 링크로 연 칠판을 고치기 시작하면 주소와 제목을 원래대로 (새로고침 때 링크 내용으로 되돌아가지 않도록)
+    if (linkActive) {
+      linkActive = false;
+      document.title = BASE_TITLE;
+      try { history.replaceState(null, "", location.href.split("#")[0]); } catch (e) { /* 무시 */ }
+    }
+  }
   function savePrefs() { store(PREF_KEY, prefs); }
 
   /* ───── 그리기 ───── */
@@ -1011,6 +1036,46 @@ body.present .peek { display: block; }
 
   /* ───── 수업 저장·불러오기 ───── */
   function lessons() { return store(LESSONS_KEY) || []; }
+  function folderNames() {
+    var seen = {};
+    return lessons().map(function (l) { return l.folder || ""; }).filter(function (f) { if (!f || seen[f]) return false; seen[f] = 1; return true; });
+  }
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  /* 저장한 수업 전체를 브라우저 북마크 파일(크롬·엣지·웨일 가져오기용)로 만들기 */
+  function exportBookmarks() {
+    var all = lessons();
+    if (!all.length) { toast("먼저 수업을 저장해 주세요."); return; }
+    toast("북마크 파일을 만드는 중입니다…");
+    Promise.all(all.map(function (l) { return makeLink(l.name, l.state, l.folder); })).then(function (urls) {
+      var groups = {}, order = [];
+      all.forEach(function (l, i) {
+        var f = l.folder || "";
+        if (!groups[f]) { groups[f] = []; order.push(f); }
+        groups[f].push('        <DT><A HREF="' + esc(urls[i]) + '">' + esc(l.name) + "</A>");
+      });
+      order.sort(function (a, b) { return a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, "ko"); });
+      var now = Math.floor(Date.now() / 1000);
+      var body = order.map(function (f) {
+        if (!f) return groups[f].map(function (x) { return x.slice(4); }).join("\n");
+        return '    <DT><H3 ADD_DATE="' + now + '">' + esc(f) + "</H3>\n    <DL><p>\n" + groups[f].join("\n") + "\n    </DL><p>";
+      }).join("\n");
+      var html = "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n" +
+        '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n' +
+        "<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n" +
+        '<DT><H3 ADD_DATE="' + now + '">개념기반 탐구 칠판</H3>\n<DL><p>\n' +
+        '    <DT><A HREF="' + esc(location.href.split("#")[0]) + '">빈 칠판 열기</A>\n' +
+        body + "\n</DL><p>\n</DL><p>\n";
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      var d = new Date();
+      a.download = "conceptboard-bookmarks-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0") + ".html";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      toast("북마크 파일을 내려받았습니다. 아래 안내대로 브라우저에서 가져오세요.");
+    });
+  }
+
   function openLessons() {
     var back = document.createElement("div");
     back.className = "panel-back";
@@ -1018,73 +1083,107 @@ body.present .peek { display: block; }
     back.innerHTML =
       '<div class="panel" role="dialog" aria-modal="true" aria-labelledby="pTitle">' +
       '<h2 id="pTitle">수업 저장·불러오기</h2>' +
-      '<p class="sub">이 컴퓨터의 브라우저에 저장됩니다.' + (LINKS_OK ? ' 다른 기기에서 열려면 <b>수업 링크</b>를 만들어 북마크해 두세요.' : ' 다른 컴퓨터에서는 보이지 않습니다.') + '</p>' +
-      '<div class="save-row"><input type="text" id="lessonName" aria-label="수업 이름"><button class="btn primary" type="button" id="lessonSave">지금 칠판 저장</button></div>' +
-      (LINKS_OK ? '<div class="save-row"><button class="btn" type="button" id="lessonLink">🔗 지금 칠판으로 수업 링크 만들기</button></div><div id="linkSlot"></div>' : '') +
+      '<p class="sub">이 컴퓨터의 브라우저에 저장됩니다.' + (LINKS_OK ? ' 다른 기기에서 열려면 <b>수업 링크</b>나 <b>북마크 파일</b>을 쓰세요.' : ' 다른 컴퓨터에서는 보이지 않습니다.') + '</p>' +
+      '<div class="two">' +
+      '<label>폴더 (단원·과목)<input type="text" id="lessonFolder" list="folderList" placeholder="예: 실과 2단원 식생활" autocomplete="off"></label>' +
+      '<label>북마크 제목 (수업 이름)<input type="text" id="lessonName" autocomplete="off"></label>' +
+      '</div><datalist id="folderList"></datalist>' +
+      '<div class="save-row"><button class="btn primary" type="button" id="lessonSave">지금 칠판 저장</button>' +
+      (LINKS_OK ? '<button class="btn" type="button" id="lessonLink">🔗 수업 링크 만들기</button>' : '') + '</div>' +
+      (LINKS_OK ? '<div id="linkSlot"></div>' : '') +
       '<h3>저장한 수업</h3>' +
-      '<ul class="lesson-list" id="lessonList"></ul>' +
+      '<div id="lessonList"></div>' +
+      (LINKS_OK ?
+        '<div class="export-box"><p><b>📁 브라우저 북마크 폴더로 내보내기</b><br>저장한 수업 전체가 폴더별로 정리된 북마크 파일을 내려받습니다. 브라우저에서 가져오면 <b>‘개념기반 탐구 칠판’</b> 폴더 안에 폴더·수업 이름 그대로 북마크가 생깁니다.</p>' +
+        '<button class="btn primary" type="button" id="lessonExport">북마크 파일 내려받기</button></div>' : '') +
       '<div class="close-row"><button class="btn" type="button" id="lessonClose">닫기</button></div>' +
       "</div>";
     document.body.appendChild(back);
     var nameIn = back.querySelector("#lessonName");
+    var folderIn = back.querySelector("#lessonFolder");
     nameIn.value = suggested;
+    folderIn.value = store("conceptboard.lastFolder.v1") || "";
     function close() { back.remove(); }
+    function fillFolders() {
+      back.querySelector("#folderList").innerHTML = folderNames().map(function (f) { return '<option value="' + esc(f) + '"></option>'; }).join("");
+    }
     function draw() {
-      var list = back.querySelector("#lessonList");
+      fillFolders();
+      var box = back.querySelector("#lessonList");
       var all = lessons();
-      list.innerHTML = "";
-      if (!all.length) { list.innerHTML = '<li class="empty-note" style="border:0">아직 저장한 수업이 없습니다. 위에서 이름을 정하고 저장해 보세요.</li>'; return; }
-      all.forEach(function (l, i) {
-        var li = document.createElement("li");
-        var meta = document.createElement("div");
-        meta.className = "meta";
-        var nm = document.createElement("div"); nm.className = "name"; nm.textContent = l.name;
-        var wh = document.createElement("div"); wh.className = "when"; wh.textContent = new Date(l.at).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
-        meta.appendChild(nm); meta.appendChild(wh);
-        var load = document.createElement("button"); load.type = "button"; load.className = "btn"; load.textContent = "불러오기";
-        load.addEventListener("click", function () {
-          state = JSON.parse(JSON.stringify(l.state));
-          var t = todayParts(); state.m = t.m; state.d = t.d; state.w = t.w;
-          save(); renderAll(); close(); toast("‘" + l.name + "’ 수업을 불러왔습니다.");
-        });
-        var del = document.createElement("button"); del.type = "button"; del.className = "btn warn"; del.textContent = "삭제";
-        var armed = false;
-        del.addEventListener("click", function () {
-          if (!armed) { armed = true; del.textContent = "정말 삭제"; return; }
-          var arr = lessons(); arr.splice(i, 1); store(LESSONS_KEY, arr); draw();
-        });
-        li.appendChild(meta); li.appendChild(load);
-        if (LINKS_OK) {
-          var lk = document.createElement("button"); lk.type = "button"; lk.className = "btn"; lk.textContent = "링크";
-          lk.addEventListener("click", function () { showLink(l.name, l.state); });
-          li.appendChild(lk);
-        }
-        li.appendChild(del);
-        list.appendChild(li);
+      box.innerHTML = "";
+      if (!all.length) { box.innerHTML = '<p class="empty-note">아직 저장한 수업이 없습니다. 위에서 폴더와 제목을 정하고 저장해 보세요.</p>'; return; }
+      var order = folderNames().sort(function (a, b) { return a.localeCompare(b, "ko"); });
+      if (all.some(function (l) { return !l.folder; })) order.push("");
+      order.forEach(function (f) {
+        var items = all.map(function (l, i) { return { l: l, i: i }; }).filter(function (x) { return (x.l.folder || "") === f; });
+        var det = document.createElement("details");
+        det.className = "folder-group";
+        det.open = true;
+        var sum = document.createElement("summary");
+        sum.textContent = "📁 " + (f || "폴더 없음") + " ";
+        var cnt = document.createElement("span"); cnt.className = "count"; cnt.textContent = items.length + "개";
+        sum.appendChild(cnt);
+        det.appendChild(sum);
+        var ul = document.createElement("ul"); ul.className = "lesson-list";
+        items.forEach(function (x) { ul.appendChild(row(x.l, x.i)); });
+        det.appendChild(ul);
+        box.appendChild(det);
       });
     }
-    back.querySelector("#lessonSave").addEventListener("click", function () {
-      var name = nameIn.value.trim() || "이름 없는 수업";
-      var arr = lessons().filter(function (l) { return l.name !== name; });
-      arr.unshift({ name: name, at: Date.now(), state: JSON.parse(JSON.stringify(state)) });
-      store(LESSONS_KEY, arr);
-      if (!store(LESSONS_KEY)) { toast("이 브라우저에서는 저장이 막혀 있습니다."); return; }
-      draw(); toast("저장했습니다.");
-    });
-    function showLink(name, st) {
+    function row(l, i) {
+      var li = document.createElement("li");
+      var meta = document.createElement("div"); meta.className = "meta";
+      var nm = document.createElement("div"); nm.className = "name"; nm.textContent = l.name;
+      var wh = document.createElement("div"); wh.className = "when"; wh.textContent = new Date(l.at).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+      meta.appendChild(nm); meta.appendChild(wh);
+      var acts = document.createElement("div"); acts.className = "acts";
+      function b(label, fn, cls) {
+        var x = document.createElement("button"); x.type = "button"; x.className = "btn" + (cls ? " " + cls : ""); x.textContent = label;
+        x.addEventListener("click", fn); acts.appendChild(x); return x;
+      }
+      b("불러오기", function () {
+        state = JSON.parse(JSON.stringify(l.state));
+        var t = todayParts(); state.m = t.m; state.d = t.d; state.w = t.w;
+        save(); renderAll(); close(); toast("‘" + l.name + "’ 수업을 불러왔습니다.");
+      });
+      if (LINKS_OK) b("링크", function () { showLink(l.name, l.state, l.folder); });
+      b("이름·폴더", function () {
+        if (li.querySelector(".edit-row")) return;
+        var er = document.createElement("div"); er.className = "edit-row";
+        er.innerHTML = '<input type="text" class="e-folder" list="folderList" placeholder="폴더" aria-label="폴더"><input type="text" class="e-name" placeholder="북마크 제목" aria-label="북마크 제목"><button class="btn primary" type="button">바꾸기</button>';
+        er.querySelector(".e-folder").value = l.folder || "";
+        er.querySelector(".e-name").value = l.name;
+        er.querySelector("button").addEventListener("click", function () {
+          var arr = lessons();
+          arr[i].name = er.querySelector(".e-name").value.trim() || l.name;
+          arr[i].folder = er.querySelector(".e-folder").value.trim();
+          store(LESSONS_KEY, arr); draw(); toast("바꿨습니다.");
+        });
+        li.appendChild(er);
+        er.querySelector(".e-name").focus();
+      });
+      var armed = false;
+      var del = b("삭제", function () {
+        if (!armed) { armed = true; del.textContent = "정말 삭제"; return; }
+        var arr = lessons(); arr.splice(i, 1); store(LESSONS_KEY, arr); draw();
+      }, "warn");
+      li.appendChild(meta); li.appendChild(acts);
+      return li;
+    }
+    function showLink(name, st, folder) {
       var slot = back.querySelector("#linkSlot");
-      slot.innerHTML = '<div class="link-box"><b style="font-size:14px"></b><p class="hint">링크를 만드는 중…</p></div>';
-      slot.querySelector("b").textContent = "‘" + name + "’ 수업 링크";
-      makeLink(name, st).then(function (url) {
+      slot.innerHTML = '<div class="link-box"><p class="hint">링크를 만드는 중…</p></div>';
+      makeLink(name, st, folder).then(function (url) {
         slot.innerHTML =
           '<div class="link-box">' +
           '<b style="font-size:14px"></b>' +
           '<input type="text" id="linkText" readonly aria-label="수업 링크">' +
           '<div class="acts"><button class="btn primary" type="button" id="linkCopy">링크 복사</button>' +
           '<a class="btn" id="linkOpen" target="_blank" rel="noopener">새 탭에서 열기 (북마크용)</a></div>' +
-          '<p class="hint">새 탭에서 연 뒤 <b>Ctrl+D</b>(휴대폰은 ☆)로 북마크하세요. 이 링크 안에 칠판 내용이 통째로 들어 있어 인터넷만 되면 어느 기기에서든 그대로 열립니다. 링크를 아는 사람은 누구나 내용을 볼 수 있습니다.</p>' +
+          '<p class="hint">새 탭에서 열면 탭 제목이 수업 이름으로 바뀝니다. 그 상태에서 <b>Ctrl+D</b>(휴대폰은 ☆)를 누르고 폴더를 고르면 수업 이름 그대로 북마크됩니다. 링크를 아는 사람은 누구나 내용을 볼 수 있습니다.</p>' +
           '</div>';
-        slot.querySelector("b").textContent = "‘" + name + "’ 수업 링크";
+        slot.querySelector("b").textContent = (folder ? folder + " › " : "") + name;
         var inp = slot.querySelector("#linkText");
         inp.value = url;
         slot.querySelector("#linkOpen").href = url;
@@ -1097,9 +1196,22 @@ body.present .peek { display: block; }
         });
       });
     }
-    if (LINKS_OK) back.querySelector("#lessonLink").addEventListener("click", function () {
-      showLink(nameIn.value.trim() || "이름 없는 수업", state);
+    back.querySelector("#lessonSave").addEventListener("click", function () {
+      var name = nameIn.value.trim() || "이름 없는 수업";
+      var folder = folderIn.value.trim();
+      store("conceptboard.lastFolder.v1", folder);
+      var arr = lessons().filter(function (l) { return !(l.name === name && (l.folder || "") === folder); });
+      arr.unshift({ name: name, folder: folder, at: Date.now(), state: JSON.parse(JSON.stringify(state)) });
+      store(LESSONS_KEY, arr);
+      if (!store(LESSONS_KEY)) { toast("이 브라우저에서는 저장이 막혀 있습니다."); return; }
+      draw(); toast("‘" + (folder ? folder + " › " : "") + name + "’ 저장했습니다.");
     });
+    if (LINKS_OK) {
+      back.querySelector("#lessonLink").addEventListener("click", function () {
+        showLink(nameIn.value.trim() || "이름 없는 수업", state, folderIn.value.trim());
+      });
+      back.querySelector("#lessonExport").addEventListener("click", exportBookmarks);
+    }
     back.querySelector("#lessonClose").addEventListener("click", close);
     back.addEventListener("click", function (e) { if (e.target === back) close(); });
     back.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
@@ -1152,8 +1264,8 @@ body.present .peek { display: block; }
   function pipe(bytes, stream) {
     return new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer().then(function (b) { return new Uint8Array(b); });
   }
-  function makeLink(name, st) {
-    var payload = { v: 1, n: name, s: { lens: st.lens, question: st.question, words: st.words, inquiries: st.inquiries, gen: st.gen } };
+  function makeLink(name, st, folder) {
+    var payload = { v: 1, n: name, f: folder || "", s: { lens: st.lens, question: st.question, words: st.words, inquiries: st.inquiries, gen: st.gen } };
     var raw = new TextEncoder().encode(JSON.stringify(payload));
     var base = location.href.split("#")[0];
     var done = function (code) { return base + "#lesson=" + code; };
@@ -1186,21 +1298,23 @@ body.present .peek { display: block; }
       };
       var t = todayParts(); next.m = t.m; next.d = t.d; next.w = t.w;
       var name = String(data.n || "링크로 연 수업").slice(0, 80);
+      var folder = String(data.f || "").slice(0, 40);
       var arr = lessons();
       // 지금 칠판에 다른 내용이 있으면 덮어쓰기 전에 자동 백업
       if (!isEmptyBoard(state) && !sameBoard(state, next) && !arr.some(function (l) { return sameBoard(l.state, state); })) {
         arr.unshift({ name: "자동 백업 " + new Date().toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" }), at: Date.now(), state: JSON.parse(JSON.stringify(state)) });
       }
       // 링크로 연 수업을 이 기기의 저장 목록에도 넣어 둠
-      arr = arr.filter(function (l) { return l.name !== name; });
-      arr.unshift({ name: name, at: Date.now(), state: JSON.parse(JSON.stringify(next)) });
+      arr = arr.filter(function (l) { return !(l.name === name && (l.folder || "") === folder); });
+      arr.unshift({ name: name, folder: folder, at: Date.now(), state: JSON.parse(JSON.stringify(next)) });
       store(LESSONS_KEY, arr);
       state = next; save(); renderAll();
+      // 수업을 고치기 전까지는 주소에 수업을 남기고 탭 제목을 수업 이름으로 → 이 상태에서 Ctrl+D 하면 수업 이름으로 북마크됨
+      linkActive = true;
+      document.title = name;
       toast("‘" + name + "’ 수업을 열었습니다.");
     }).catch(function () {
       toast("수업 링크가 잘렸거나 손상되어 열 수 없습니다. 링크 전체를 다시 복사해 주세요.");
-    }).then(function () {
-      // 고친 내용이 새로고침 때 링크 내용으로 되돌아가지 않도록 주소의 수업 부분을 지움
       try { history.replaceState(null, "", location.href.split("#")[0]); } catch (e) { /* 무시 */ }
     });
   }
