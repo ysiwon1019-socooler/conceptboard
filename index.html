@@ -34,10 +34,11 @@
 
   --u: min(1vw, 1.7778vh);
   --scale: 1;
-  --t-body: calc(var(--u) * 2.9 * var(--scale));
-  --t-chip: calc(var(--u) * 2.6 * var(--scale));
-  --t-tag: calc(var(--u) * 1.85);
-  --t-date: calc(var(--u) * 2.6 * var(--scale));
+  --fit: 1; /* 내용이 16:9 화면을 넘칠 때 자동으로 줄어드는 비율 */
+  --t-body: calc(var(--u) * 2.9 * var(--scale) * var(--fit));
+  --t-chip: calc(var(--u) * 2.6 * var(--scale) * var(--fit));
+  --t-tag: calc(var(--u) * 1.85 * (.4 + .6 * var(--fit)));
+  --t-date: calc(var(--u) * 2.6 * var(--scale) * var(--fit));
 }
 body.theme-chalk {
   /* 칠판색 보드 */
@@ -67,7 +68,11 @@ body.font-myeongjo { --font-board: "Nanum Myeongjo", "Batang", serif; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: var(--frame);
+  /* 16:9 바깥 여백(레터박스) */
+  background: #0e0f0e;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
   color: var(--ink);
   font-family: var(--font-board);
   -webkit-font-smoothing: antialiased;
@@ -77,9 +82,12 @@ body {
 /* ───────── 보드 ───────── */
 .board {
   position: relative;
-  min-height: 100%;
+  /* 16:9 고정 화면: 가로 100u × 세로 56.25u, 창 크기에 맞춰 통째로 확대·축소 */
+  width: calc(var(--u) * 100);
+  height: calc(var(--u) * 56.25);
+  overflow: hidden;
   background: var(--board);
-  padding-block: calc(var(--u) * 2.4) calc(var(--u) * 3);
+  padding-block: calc(var(--u) * 2.4 * var(--fit)) calc(var(--u) * 2.4 * var(--fit));
   padding-left: max(calc(var(--u) * 3), env(safe-area-inset-left, 0px), 16px);
   padding-right: max(calc(var(--u) * 3), env(safe-area-inset-right, 0px), 16px);
   display: grid;
@@ -91,7 +99,7 @@ body {
     "bank inquiry"
     "gen  gen";
   column-gap: calc(var(--u) * 3);
-  row-gap: calc(var(--u) * 1.6);
+  row-gap: calc(var(--u) * 1.6 * var(--fit));
   transition: background .25s;
 }
 
@@ -124,7 +132,7 @@ body {
   position: relative;
   align-self: start;
   justify-self: center;
-  width: calc(var(--u) * 16);
+  width: calc(var(--u) * 16 * var(--fit));
   aspect-ratio: 1;
   max-width: 100%;
 }
@@ -139,7 +147,7 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: calc(var(--u) * 3.6 * var(--scale));
+  font-size: calc(var(--u) * 3.6 * var(--scale) * var(--fit));
   font-weight: 700;
   color: var(--ink-blue);
   line-height: 1.1;
@@ -194,8 +202,8 @@ body {
 .row > .tag { margin-top: calc(var(--t-body) * .12); }
 
 .question { grid-area: question; }
-.inquiry { grid-area: inquiry; display: flex; flex-direction: column; gap: calc(var(--u) * 1.8); padding-top: calc(var(--u) * 1.5); }
-.gen { grid-area: gen; padding-top: calc(var(--u) * 2); }
+.inquiry { grid-area: inquiry; display: flex; flex-direction: column; gap: calc(var(--u) * 1.8 * var(--fit)); padding-top: calc(var(--u) * 1.5 * var(--fit)); }
+.gen { grid-area: gen; padding-top: calc(var(--u) * 2 * var(--fit)); }
 
 /* 입력 칸 */
 .field {
@@ -454,9 +462,13 @@ body.present .peek { display: block; }
 }
 
 /* 좁은 화면(휴대폰·세로 태블릿): 한 줄로 쌓기 */
-@media (max-width: 760px) {
+@media (max-width: 760px) and (orientation: portrait) {
   :root { --u: 2.2vw; }
+  body { display: block; overflow: auto; background: var(--board); }
   .board {
+    width: auto;
+    height: auto;
+    min-height: 100%;
     grid-template-columns: 1fr;
     grid-template-areas: "date" "lens" "question" "bank" "inquiry" "gen";
     padding-bottom: 120px;
@@ -696,7 +708,7 @@ body.present .peek { display: block; }
       b.textContent = w.text;
       b.addEventListener("click", function (e) {
         if (e.target.classList.contains("x")) return;
-        w.on = !w.on; save(); renderWords();
+        w.on = !w.on; save(); renderWords(); fit();
       });
       var x = document.createElement("span");
       x.className = "x";
@@ -752,6 +764,7 @@ body.present .peek { display: block; }
       });
       box.appendChild(add);
     }
+    fit();
   }
 
   function applyPrefs() {
@@ -763,6 +776,7 @@ body.present .peek { display: block; }
     if (f.cls) document.body.classList.add(f.cls);
     $("fontLabel").textContent = f.label;
     document.documentElement.style.setProperty("--scale", prefs.scale);
+    if (typeof fit === "function") fit();
   }
 
   /* ───── 입력 칸 동작 ───── */
@@ -792,6 +806,7 @@ body.present .peek { display: block; }
     el.addEventListener("input", function () {
       setter(cleanHTML(el));
       save();
+      fit();
     });
     el.addEventListener("blur", function () {
       if (el.dataset.autoparen) autoParen(el);
@@ -850,7 +865,7 @@ body.present .peek { display: block; }
     if (!v) return;
     v.split(/\s*,\s*/).forEach(function (t) { if (t) state.words.push({ text: t, on: false }); });
     this.value = "";
-    save(); renderWords();
+    save(); renderWords(); fit();
   });
 
   /* ───── 선택한 글자에 색 입히기 ───── */
@@ -950,6 +965,7 @@ body.present .peek { display: block; }
   function setPresent(on) {
     document.body.classList.toggle("present", on);
     $("tPresent").classList.toggle("active", on);
+    fit();
     if (on) { fmt.hidden = true; pick.hidden = true; if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }
   }
   $("tPresent").addEventListener("click", function () { setPresent(true); });
@@ -1056,7 +1072,24 @@ body.present .peek { display: block; }
     toastTimer = setTimeout(function () { t.remove(); }, 2600);
   }
 
-  function renderAll() { renderFields(); renderWords(); renderInquiries(); }
+  function renderAll() { renderFields(); renderWords(); renderInquiries(); fit(); }
+
+  /* 글이 길어 16:9 화면을 넘치면 글자를 조금씩 줄여 한 화면에 맞춤 */
+  var fitTimer;
+  function fit() {
+    cancelAnimationFrame(fitTimer);
+    fitTimer = requestAnimationFrame(function () {
+      var board = $("board"), root = document.documentElement, f = 1;
+      root.style.setProperty("--fit", 1);
+      if (getComputedStyle(board).overflow !== "hidden") return;
+      while (board.scrollHeight > board.clientHeight + 1 && f > 0.45) {
+        f = Math.round((f - 0.05) * 100) / 100;
+        root.style.setProperty("--fit", f);
+      }
+    });
+  }
+  window.addEventListener("resize", fit);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
 
   applyPrefs();
   renderAll();
