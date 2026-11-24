@@ -23,6 +23,8 @@
   --tag-num: #ffd23f;
   --lens-ring: #1b1d1c;
   --hl-yellow: rgba(255, 214, 10, .45);
+  --inq-bg: #fff6cc;
+  --inq-line: #ecd889;
   --ui-bg: rgba(255, 255, 255, .94);
   --ui-fg: #1d201e;
   --ui-line: #d7d9d4;
@@ -53,6 +55,8 @@ body.theme-chalk {
   --tag-num: #ffd23f;
   --lens-ring: #f4f2e8;
   --hl-yellow: rgba(255, 214, 10, .28);
+  --inq-bg: rgba(255, 228, 130, .14);
+  --inq-line: rgba(255, 214, 10, .45);
   --ui-bg: rgba(22, 32, 27, .95);
   --ui-fg: #f4f2e8;
   --ui-line: #3d5247;
@@ -68,8 +72,8 @@ body.font-myeongjo { --font-board: "Nanum Myeongjo", "Batang", serif; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  /* 16:9 바깥 여백(레터박스) */
-  background: #0e0f0e;
+  /* 16:9 바깥 여백도 칠판과 같은 색으로 채워 경계가 보이지 않게 */
+  background: var(--board);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -202,7 +206,18 @@ body {
 .row > .tag { margin-top: calc(var(--t-body) * .12); }
 
 .question { grid-area: question; }
-.inquiry { grid-area: inquiry; display: flex; flex-direction: column; gap: calc(var(--u) * 1.8 * var(--fit)); padding-top: calc(var(--u) * 1.5 * var(--fit)); }
+.inquiry {
+  grid-area: inquiry;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 1.6 * var(--fit));
+  margin-top: calc(var(--u) * 1 * var(--fit));
+  padding: calc(var(--u) * 2 * var(--fit)) calc(var(--u) * 2.4);
+  background: var(--inq-bg);
+  border: 2px solid var(--inq-line);
+  border-radius: calc(var(--u) * 1.2);
+}
 .gen { grid-area: gen; padding-top: calc(var(--u) * 2 * var(--fit)); }
 
 /* 입력 칸 */
@@ -259,7 +274,7 @@ body.blank-mode .board .hl-red:not(.revealed)::selection { color: transparent; }
 .word {
   position: relative;
   font-size: var(--t-chip);
-  color: var(--ink-blue);
+  color: var(--ink-red);
   line-height: 1.3;
   cursor: pointer;
   user-select: none;
